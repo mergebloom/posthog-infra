@@ -137,7 +137,7 @@ services:
             service: web
         command: /compose/start
         ports:
-            - '${POSTHOG_BIND_ADDRESS:-100.81.252.96}:${POSTHOG_PORT:-18000}:8000'
+            - '${POSTHOG_BIND_ADDRESS:-127.0.0.1}:${POSTHOG_PORT:-18000}:8000'
         logging: *default-logging
         volumes:
             - ./compose:/compose
