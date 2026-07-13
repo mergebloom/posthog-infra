@@ -42,12 +42,12 @@ services:
             - kafka
             - zookeeper
         volumes:
-            - ./posthog/posthog/idl:/idl
-            - ./posthog/docker/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
-            - ./posthog/docker/clickhouse/config.xml:/etc/clickhouse-server/config.xml
-            - ./posthog/docker/clickhouse/config.d/default.xml:/etc/clickhouse-server/config.d/default.xml
-            - ./posthog/docker/clickhouse/users.xml:/etc/clickhouse-server/users.xml
-            - ./posthog/docker/clickhouse/user_defined_function.xml:/etc/clickhouse-server/user_defined_function.xml
+            - ./posthog/idl:/idl
+            - ./docker/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+            - ./docker/clickhouse/config.xml:/etc/clickhouse-server/config.xml
+            - ./docker/clickhouse/config.d/default.xml:/etc/clickhouse-server/config.d/default.xml
+            - ./docker/clickhouse/users.xml:/etc/clickhouse-server/users.xml
+            - ./docker/clickhouse/user_defined_function.xml:/etc/clickhouse-server/user_defined_function.xml
             - ./posthog/posthog/user_scripts:/var/lib/clickhouse/user_scripts
             - clickhouse-data:/var/lib/clickhouse
 
@@ -363,7 +363,7 @@ services:
         environment:
             - ENABLE_ES=false
         volumes:
-            - ./posthog/docker/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+            - ./docker/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
     elasticsearch:
         extends:
             file: docker-compose.base.yml
@@ -480,7 +480,7 @@ services:
         environment:
             - LIVESTREAM_JWT_SECRET=${POSTHOG_SECRET}
         volumes:
-            - ./posthog/docker/livestream/configs-hobby.yml:/configs/configs.yml
+            - ./docker/livestream/configs-hobby.yml:/configs/configs.yml
 
     personhog-replica:
         build:
