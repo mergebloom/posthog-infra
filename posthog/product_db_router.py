@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+from functools import lru_cache
+
+from django.conf import settings
+from django.core.checks import CheckMessage, Error, Warning, register
+
+from posthog.product_db_config import ProductDBRoute, load_product_db_routes
+from posthog.settings.base_variables import TEST
+from posthog.settings.utils import DEPLOYED_CLOUD_DEPLOYMENTS
+
+
+@lru_cache(maxsize=1)
+def get_product_db_routes() -> tuple[ProductDBRoute, ...]:
+    return load_product_db_routes(settings.BASE_DIR)
+
+
+class ProductDBRouter:
+    def __init__(self, routes: tuple[ProductDBRoute, ...] | None = None):
+        configured_routes = routes if routes is not None else get_product_db_routes()
+        self.routes = tuple(route for route in configured_routes if f"{route.database}_db_writer" in settings.DATABASES)
+        self._product_db_aliases = frozenset(
+            alias
+            for route in self.routes
+            for alias in (f"{route.database}_db_writer", f"{route.database}_db_reader", f"{route.database}_db_direct")
+        )
+
+    def db_for_read(self, model, **hints):
+        for route in self.routes:
+            if route.routes_model(model):
+                # In tests, reads go to the writer so they share the same
+                # connection and transaction — otherwise reads can't see
+                # uncommitted writes within the same test.
+                suffix = "_db_writer" if TEST else "_db_reader"
+                return f"{route.database}{suffix}"
+        return None
+
+    def db_for_write(self, model, **hints):
+        for route in self.routes:
+            if route.routes_model(model):
+                return f"{route.database}_db_writer"
+        return None
+
+    def allow_relation(self, obj1, obj2, **hints):
+        db1 = self._db_for_model(obj1.__class__)
+        db2 = self._db_for_model(obj2.__class__)
+        if db1 is not None or db2 is not None:
+            # If either model is routed, only allow if both resolve to the same DB
+            return db1 == db2
+        return None
+
+    def _db_for_model(self, model_class: type) -> str | None:
+        for route in self.routes:
+            if route.routes_model(model_class):
+                return route.database
+        return None
+
+    def allow_migrate(self, db, app_label, model_name=None, **hints):
+        for route in self.routes:
+            if app_label == route.app_label:
+                return db in (f"{route.database}_db_writer", f"{route.database}_db_direct")
+
+        if db in self._product_db_aliases:
+            return False
+
+        return None
+
+
+@register()
+def check_product_db_routes(app_configs, **kwargs):
+    errors: list[Error] = []
+
+    routes = get_product_db_routes()
+    app_label_to_database: dict[str, str] = {}
+
+    for route in routes:
+        existing = app_label_to_database.get(route.app_label)
+        if existing is not None and existing != route.database:
+            errors.append(
+                Error(
+                    f"product db route for '{route.app_label}' points to multiple databases",
+                    hint="Ensure each product app has exactly one database in db_routing.yaml",
+                    id="posthog.E003",
+                )
+            )
+        app_label_to_database[route.app_label] = route.database
+
+    return errors
+
+
+def product_db_routes_configured_errors(routes: tuple[ProductDBRoute, ...]) -> list[CheckMessage]:
+    # Only enforced on deployed cloud environments, where charts always injects
+    # the PRODUCT_DB_* env vars. E2E (local cloud-features dev) and self-hosted
+    # (no CLOUD_DEPLOYMENT) intentionally run product models on the default
+    # database instead. DEBUG needs no guard: settings import rejects DEBUG on
+    # deployed cloud (assert_debug_not_in_production, same deployment tuple).
+    if settings.TEST:
+        return []
+    if (settings.CLOUD_DEPLOYMENT or "").upper() not in DEPLOYED_CLOUD_DEPLOYMENTS:
+        return []
+
+    messages: list[CheckMessage] = []
+    for route in routes:
+        configured = f"{route.database}_db_writer" in settings.DATABASES
+        if route.optional and configured:
+            messages.append(
+                Warning(
+                    f"Product database '{route.database}' (app '{route.app_label}') is configured but "
+                    f"still marked 'optional: true' in {route.source}.",
+                    hint="Once the database is provisioned in every environment, remove the 'optional' "
+                    "flag so a missing connection fails deploys instead of silently falling back.",
+                    id="posthog.W001",
+                )
+            )
+        elif not route.optional and not configured:
+            env_var = f"PRODUCT_DB_{route.database.upper()}_WRITER_URL"
+            messages.append(
+                Error(
+                    f"Product database '{route.database}' (app '{route.app_label}') has no connection configured, "
+                    "so its models would silently fall back to the default database.",
+                    hint=f"Set {env_var} in the deployment, or mark the route 'optional: true' in {route.source} "
+                    "while the database is still being provisioned.",
+                    id="posthog.E005",
+                )
+            )
+    return messages
+
+
+@register()
+def check_product_db_routes_configured(app_configs, **kwargs):
+    return product_db_routes_configured_errors(get_product_db_routes())

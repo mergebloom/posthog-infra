@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+/compose/wait
+./bin/migrate
+exec ./bin/docker-server

@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+import socket
+import time
+
+def ready(host, port):
+    while True:
+        try:
+            with socket.create_connection((host, port), timeout=5):
+                return
+        except OSError:
+            time.sleep(5)
+
+ready("clickhouse", 9000)
+ready("db", 5432)
