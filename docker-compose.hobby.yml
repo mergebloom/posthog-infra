@@ -312,9 +312,6 @@ services:
         logging: *default-logging
         volumes:
             - objectstorage:/data
-        ports:
-            - '19000:19000'
-            - '19001:19001'
 
     seaweedfs:
         extends:
@@ -323,9 +320,6 @@ services:
         container_name: '${SEAWEEDFS_DOCKER_NAME:-seaweedfs-main}'
         restart: on-failure
         logging: *default-logging
-        ports:
-            - '127.0.0.1:8333:8333' # S3 API
-            - '127.0.0.1:9333:9333' # Master server
         volumes:
             - seaweedfs:/data
         healthcheck:
@@ -368,8 +362,6 @@ services:
         logging: *default-logging
         environment:
             - ENABLE_ES=false
-        ports:
-            - 7233:7233
         volumes:
             - ./posthog/docker/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
     elasticsearch:
@@ -389,8 +381,6 @@ services:
             file: docker-compose.base.yml
             service: temporal-ui
         logging: *default-logging
-        ports:
-            - 8081:8080
         depends_on:
             temporal:
                 condition: service_started
